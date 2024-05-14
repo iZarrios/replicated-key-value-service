@@ -24,7 +24,7 @@ const (
 )
 
 // Debugging
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -50,6 +50,9 @@ type KVServer struct {
 }
 
 func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
+	if server.role == BACKUP {
+		DPrintf("[BACKUP] Got Put request: %#v\n", args)
+	}
 	val := server.mp[args.Key]
 
 	reply.PreviousValue = val
@@ -65,28 +68,36 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		server.mp[args.Key] = args.Value
 	}
 
-	// if server.view.Backup != "" {
+	if server.role == PRIMARY && server.view.Backup != "" {
+		args := &PutArgs{
+			Key:    args.Key,
+			Value:  args.Value,
+			DoHash: args.DoHash,
+		}
+		var reply PutReply
 
-	// 	// fmt.Println("Backup exists")
-	// 	// forward the data to the backup
-	// 	args := &PutArgs{
-	// 		Key:    args.Key,
-	// 		Value:  args.Value,
-	// 		DoHash: args.DoHash,
-	// 	}
-	// 	var reply PutReply
-	// 	ok := call(server.view.Backup, "KVServer.Put", args, &reply)
-	// 	if !ok {
-	// 		panic("Failed to forward key to backup")
-	// 	} else {
-	// 		panic("forwarded key to backup")
-	// 	}
-	// }
+		DPrintf("Trying to send %#v to backup\n", args)
+
+		ok := call(server.view.Backup, "KVServer.Put", args, &reply)
+		if !ok {
+			panic("Failed to forward key to backup")
+		}
+	}
 
 	return nil
 }
 
 func (server *KVServer) Get(args *GetArgs, reply *GetReply) error {
+	// if server.view.Primary == server.id {
+	// 	server.role = PRIMARY
+	// }
+
+	if server.role == BACKUP {
+		server.printServerInfo()
+		fmt.Printf("server.view: %v\n", server.view)
+		panic("Backup server should not receive Get requests")
+	}
+
 	reply.Value = server.mp[args.Key]
 	return fmt.Errorf(string(reply.Err))
 }
@@ -128,9 +139,6 @@ func (server *KVServer) tick() {
 		panic("The Sysmonitor is dead")
 	}
 	server.view = view
-	if view.Backup != "" {
-		server.backupExists = true
-	}
 
 	switch server.id {
 	case view.Primary:
@@ -143,7 +151,9 @@ func (server *KVServer) tick() {
 		}
 	default:
 		{
-			server.role = UNKOWN
+			// fmt.Printf("server.id: %v\n", server.id)
+			// fmt.Printf("view: %v\n", view)
+			// panic("Unknown server role")
 		}
 	}
 
@@ -152,35 +162,24 @@ func (server *KVServer) tick() {
 	// and the view shows that there is a backup avaialbe
 	// then we should synchornize with it
 
-	// if server.role == PRIMARY && !server.backupExists && view.Backup != "" {
-	// 	server.ForwardDataToBackup()
-	// }
+	if server.role == PRIMARY && !server.backupExists && view.Backup != "" {
 
-	// if server.role == BACKUP && view.Primary == "" {
-	// 	fmt.Println("Primary is dead")
-	// 	// if the primary is dead, then the backup should be the new primary
-	// 	server.role = PRIMARY
-	// 	server.backupExists = false
-	// 	server.backup = ""
-	// 	fmt.Printf("view: %v\n", view)
-	// 	fmt.Printf("server.mp: %v\n", server.mp)
+		server.backupExists = true
+		fmt.Println("Forwarding data to backup")
+		server.ForwardDataToBackup()
+	}
 
-	// } else {
-	// 	fmt.Printf("server.view: %#v\n", server.view)
-
-	// }
-	// server.printServerInfo()
+	server.printServerInfo()
 
 }
 
-// func (server *KVServer) printServerInfo() {
-// 	roleMap := map[Role]string{
-// 		0: "PRIMARY",
-// 		1: "SECONDARY",
-// 	}
-
-// 	fmt.Printf("role=%v, id=%v, state=%v\n", roleMap[server.role], server.id, server.mp)
-// }
+func (server *KVServer) printServerInfo() {
+	roleMap := map[Role]string{
+		0: "PRIMARY",
+		1: "SECONDARY",
+	}
+	DPrintf("role=%v, id=%v, state=%v\n", roleMap[server.role], server.id, server.mp)
+}
 
 // tell the server to shut itself down.
 // please do not change this function.
