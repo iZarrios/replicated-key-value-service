@@ -70,7 +70,6 @@ func main() {
 	check(client, "4", "44")
 
 	fmt.Println("Checks passed.")
-
 	// kill the primary
 
 	fmt.Printf("Killing Primary ...\n")

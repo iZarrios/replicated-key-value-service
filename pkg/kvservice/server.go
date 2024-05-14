@@ -2,19 +2,29 @@ package kvservice
 
 import (
 	"fmt"
-	"github.com/iZarrios/replicated-key-value-service/pkg/sysmonitor"
 	"log"
 	"math/rand"
 	"net"
 	"net/rpc"
 	"os"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/iZarrios/replicated-key-value-service/pkg/sysmonitor"
+)
+
+type Role int
+
+const (
+	PRIMARY Role = iota
+	BACKUP
+	UNKOWN
 )
 
 // Debugging
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -34,16 +44,78 @@ type KVServer struct {
 	finish      chan interface{}
 
 	// Add your declarations here.
+	mp           map[string]string // this hold the state
+	role         Role
+	backupExists bool
 }
 
 func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
-	// Your code here.
+	val := server.mp[args.Key]
+
+	reply.PreviousValue = val
+
+	if args.DoHash {
+		key := hash(val + args.Value)
+		keyStr := strconv.Itoa(int(key))
+
+		server.mp[keyStr] = args.Value
+
+	} else {
+		// ordinary put
+		server.mp[args.Key] = args.Value
+	}
+
+	// if server.view.Backup != "" {
+
+	// 	// fmt.Println("Backup exists")
+	// 	// forward the data to the backup
+	// 	args := &PutArgs{
+	// 		Key:    args.Key,
+	// 		Value:  args.Value,
+	// 		DoHash: args.DoHash,
+	// 	}
+	// 	var reply PutReply
+	// 	ok := call(server.view.Backup, "KVServer.Put", args, &reply)
+	// 	if !ok {
+	// 		panic("Failed to forward key to backup")
+	// 	} else {
+	// 		panic("forwarded key to backup")
+	// 	}
+	// }
+
 	return nil
 }
 
 func (server *KVServer) Get(args *GetArgs, reply *GetReply) error {
-	// Your code here.
-	return nil
+	reply.Value = server.mp[args.Key]
+	return fmt.Errorf(string(reply.Err))
+}
+
+// NOTE: This can be optimized by sending the entire map to the backup
+func (server *KVServer) ForwardDataToBackup() {
+	// This function is called when the primary server detects a new backup
+	// and it should forward its data to the new backup.
+
+	// Check if backup exists
+	if server.view.Backup == "" {
+		log.Println("No backup server to forward data to.")
+		return
+	}
+
+	for key, value := range server.mp {
+		args := &PutArgs{
+			Key:    key,
+			Value:  value,
+			DoHash: false,
+		}
+		var reply PutReply
+		ok := call(server.view.Backup, "KVServer.Put", args, &reply)
+		if !ok || reply.Err != "" {
+			DPrintf("Failed to forward key %s to backup: %v\n", key, reply.Err)
+		} else {
+			DPrintf("Forwarded key %s to backup\n", key)
+		}
+	}
 }
 
 // ping the viewserver periodically.
@@ -53,13 +125,62 @@ func (server *KVServer) tick() {
 	view, err := server.monitorClnt.Ping(server.view.Viewnum)
 
 	if err != nil {
-		fmt.Printf("err.Error(): %v\n", err.Error())
+		panic("The Sysmonitor is dead")
 	}
-	_ = view
+	server.view = view
+	if view.Backup != "" {
+		server.backupExists = true
+	}
 
-	// Your code here.
+	switch server.id {
+	case view.Primary:
+		{
+			server.role = PRIMARY
+		}
+	case view.Backup:
+		{
+			server.role = BACKUP
+		}
+	default:
+		{
+			server.role = UNKOWN
+		}
+	}
+
+	// If the current server is the primary,
+	// and it does not already have a backup
+	// and the view shows that there is a backup avaialbe
+	// then we should synchornize with it
+
+	// if server.role == PRIMARY && !server.backupExists && view.Backup != "" {
+	// 	server.ForwardDataToBackup()
+	// }
+
+	// if server.role == BACKUP && view.Primary == "" {
+	// 	fmt.Println("Primary is dead")
+	// 	// if the primary is dead, then the backup should be the new primary
+	// 	server.role = PRIMARY
+	// 	server.backupExists = false
+	// 	server.backup = ""
+	// 	fmt.Printf("view: %v\n", view)
+	// 	fmt.Printf("server.mp: %v\n", server.mp)
+
+	// } else {
+	// 	fmt.Printf("server.view: %#v\n", server.view)
+
+	// }
+	// server.printServerInfo()
 
 }
+
+// func (server *KVServer) printServerInfo() {
+// 	roleMap := map[Role]string{
+// 		0: "PRIMARY",
+// 		1: "SECONDARY",
+// 	}
+
+// 	fmt.Printf("role=%v, id=%v, state=%v\n", roleMap[server.role], server.id, server.mp)
+// }
 
 // tell the server to shut itself down.
 // please do not change this function.
@@ -77,6 +198,10 @@ func StartKVServer(monitorServer string, id string) *KVServer {
 
 	// Add your server initializations here
 	// ==================================
+	server.role = UNKOWN
+	server.backupExists = false
+
+	server.mp = make(map[string]string)
 
 	//====================================
 

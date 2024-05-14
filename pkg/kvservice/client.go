@@ -1,14 +1,19 @@
 package kvservice
 
 import (
+	"crypto/rand"
 	"fmt"
-	"github.com/iZarrios/replicated-key-value-service/pkg/sysmonitor"
+	"math/big"
 	"net/rpc"
+
+	"github.com/iZarrios/replicated-key-value-service/pkg/sysmonitor"
 )
 
-// import "time"
-// import "crypto/rand"
-// import "math/big"
+var (
+	// Commonly used in cryptography as it represents the maximum value that can be stored in a 256-bit integer.
+	// 2**256 - 1
+	MAX_RAND = new(big.Int).SetBytes([]byte("115792089237316195423570985008687907853269984665640564039457584007913129639935"))
+)
 
 type KVClient struct {
 	monitorClnt *sysmonitor.Client
@@ -24,10 +29,14 @@ func MakeKVClient(monitorServer string) *KVClient {
 	client.monitorClnt = sysmonitor.MakeClient("", monitorServer)
 	client.view = sysmonitor.View{} // An empty view.
 
-	// ToDo: Generate a random id for the client.
-	// ==================================
+	// rand.Reader is a global, shared instance of a cryptographically
+	// secure random number generator.
+	clientID, err := rand.Int(rand.Reader, MAX_RAND)
+	if err != nil {
+		panic("Could not generate random clientID")
+	}
 
-	//====================================
+	client.id = clientID.String()
 
 	return client
 }
@@ -74,18 +83,38 @@ func (client *KVClient) updateView() {
 // If the key was never set, "" is expected.
 // This must keep trying until it gets a response.
 func (client *KVClient) Get(key string) string {
+	client.updateView()
+	args := &GetArgs{Key: key}
+	var reply GetReply
 
-	// Your code here.
-	return "??"
+	var ok bool = false
+
+	for !ok {
+		ok = call(client.view.Primary, "KVServer.Get", &args, &reply)
+	}
+
+	return reply.Value
 }
 
 // This should tell the primary to update key's value via an RPC call.
 // must keep trying until it succeeds.
 // You can get the primary from the client's current view.
 func (client *KVClient) PutAux(key string, value string, dohash bool) string {
+	client.updateView()
+	args := &PutArgs{
+		Key:    key,
+		Value:  value,
+		DoHash: dohash,
+	}
+	var reply PutReply
 
-	// Your code here.
-	return "??"
+	var ok bool = false
+
+	for !ok {
+		ok = call(client.view.Primary, "KVServer.Put", args, &reply)
+	}
+
+	return reply.PreviousValue
 }
 
 // Both put and puthash rely on the auxiliary method PutAux. No modifications needed below.
