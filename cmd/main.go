@@ -75,6 +75,8 @@ func main() {
 	fmt.Printf("Killing Primary ...\n")
 	s1.Kill()
 
+	time.Sleep(5 * time.Second)
+
 	fmt.Printf("See if operations will continue normally ...\n")
 	check(client, "1", "v1a")
 	check(client, "3", "33")
