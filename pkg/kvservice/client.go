@@ -83,13 +83,13 @@ func (client *KVClient) updateView() {
 // If the key was never set, "" is expected.
 // This must keep trying until it gets a response.
 func (client *KVClient) Get(key string) string {
-	client.updateView()
 	args := &GetArgs{Key: key}
 	var reply GetReply
 
 	var ok bool = false
 
 	for !ok {
+		client.updateView()
 		ok = call(client.view.Primary, "KVServer.Get", &args, &reply)
 	}
 
@@ -100,7 +100,6 @@ func (client *KVClient) Get(key string) string {
 // must keep trying until it succeeds.
 // You can get the primary from the client's current view.
 func (client *KVClient) PutAux(key string, value string, dohash bool) string {
-	client.updateView()
 	args := &PutArgs{
 		Key:    key,
 		Value:  value,
@@ -111,6 +110,7 @@ func (client *KVClient) PutAux(key string, value string, dohash bool) string {
 	var ok bool = false
 
 	for !ok {
+		client.updateView()
 		ok = call(client.view.Primary, "KVServer.Put", args, &reply)
 	}
 
