@@ -53,7 +53,10 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 	if server.role == BACKUP {
 		DPrintf("[BACKUP] Got Put request: %#v\n", args)
 	}
-	val := server.mp[args.Key]
+	val, ok := server.mp[args.Key]
+	if !ok {
+		val = ""
+	}
 
 	reply.PreviousValue = val
 
