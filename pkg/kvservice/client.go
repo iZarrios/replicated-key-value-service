@@ -40,7 +40,7 @@ func MakeKVClient(monitorServer string) *KVClient {
 	}
 
 	client.id = clientID.String()
-	client.seqNo = 0
+	client.seqNo = 1
 
 	return client
 }
