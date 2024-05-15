@@ -52,21 +52,21 @@ type KVServer struct {
 
 func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 
-	if server.role == BACKUP {
-		DPrintf("[BACKUP] Got Put request: %#v\n", args)
-	} else if server.role == PRIMARY {
-		DPrintf("[PRIMARY] Got Put request: %#v\n", args)
+	{ // Debug
+		if server.role == BACKUP {
+			DPrintf("[BACKUP] Got Put request: %#v\n", args)
+		} else if server.role == PRIMARY {
+			DPrintf("[PRIMARY] Got Put request: %#v\n", args)
+		}
 	}
 
 	if server.Reqs[args.ClientID] >= args.SeqNo {
 		DPrintf("[DUP] Put %#v\n", args)
 		reply.PreviousValue = server.mp[args.Key]
 		return nil
-	} else {
-		DPrintf("[NEW] Put request: %#v\n", args)
 	}
 
-	server.Reqs[args.ClientID]++
+	server.Reqs[args.ClientID] = args.SeqNo
 
 	val, ok := server.mp[args.Key]
 	if !ok {
@@ -77,10 +77,8 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 
 	if args.DoHash {
 		h := hash(val + args.Value)
-		keyStr := strconv.Itoa(int(h))
-
-		server.mp[args.Key] = keyStr
-
+		hStr := strconv.Itoa(int(h))
+		server.mp[args.Key] = hStr
 	} else {
 		// ordinary put
 		server.mp[args.Key] = args.Value
@@ -99,8 +97,6 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		ok := call(server.view.Backup, "KVServer.Put", args, &reply)
 		if !ok {
 			panic("Failed to forward key to backup")
-		} else {
-			DPrintf("[BACKUP] Forwarded key %s to backup\n", args.Key)
 		}
 	}
 
