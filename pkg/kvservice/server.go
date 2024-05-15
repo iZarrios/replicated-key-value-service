@@ -24,7 +24,7 @@ const (
 )
 
 // Debugging
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -47,7 +47,8 @@ type KVServer struct {
 	mp           map[string]string // this hold the state
 	role         Role
 	backupExists bool
-	Reqs         map[string]int // Map of clientID to sequence number
+	Reqs         map[string]int    // Map of clientID to sequence number
+	Prevs        map[string]string // Map of clientID to previous value
 }
 
 func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
@@ -62,7 +63,9 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 
 	if server.Reqs[args.ClientID] >= args.SeqNo {
 		DPrintf("[DUP] Put %#v\n", args)
-		reply.PreviousValue = server.mp[args.Key]
+		// Duplicate request
+		reply.PreviousValue = server.Prevs[args.ClientID]
+		reply.Err = OK
 		return nil
 	}
 
@@ -78,6 +81,7 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 	if args.DoHash {
 		h := hash(val + args.Value)
 		hStr := strconv.Itoa(int(h))
+		server.Prevs[args.ClientID] = val
 		server.mp[args.Key] = hStr
 	} else {
 		// ordinary put
@@ -100,11 +104,13 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		}
 	}
 
+	reply.Err = OK
 	return nil
 }
 
 func (server *KVServer) Get(args *GetArgs, reply *GetReply) error {
 	reply.Value = server.mp[args.Key]
+	reply.Err = OK
 	return nil
 }
 
@@ -210,6 +216,7 @@ func StartKVServer(monitorServer string, id string) *KVServer {
 
 	server.mp = make(map[string]string)
 	server.Reqs = make(map[string]int)
+	server.Prevs = make(map[string]string)
 
 	//====================================
 

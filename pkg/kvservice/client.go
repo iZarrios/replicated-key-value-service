@@ -104,7 +104,7 @@ func (client *KVClient) Get(key string) string {
 // must keep trying until it succeeds.
 // You can get the primary from the client's current view.
 func (client *KVClient) PutAux(key string, value string, dohash bool) string {
-	fmt.Printf("Sending Put with SeqNo = %v\n", client.seqNo)
+	DPrintf("Sending Put with SeqNo = %v\n", client.seqNo)
 	args := &PutArgs{
 		Key:      key,
 		Value:    value,
@@ -119,6 +119,7 @@ func (client *KVClient) PutAux(key string, value string, dohash bool) string {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
+	// TODO: ??
 	for {
 		select {
 		case <-timeout:
