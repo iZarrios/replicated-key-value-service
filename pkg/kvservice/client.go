@@ -3,8 +3,10 @@ package kvservice
 import (
 	"crypto/rand"
 	"fmt"
+	"log"
 	"math/big"
 	"net/rpc"
+	"time"
 
 	"github.com/iZarrios/replicated-key-value-service/pkg/sysmonitor"
 )
@@ -20,8 +22,9 @@ type KVClient struct {
 
 	// view provides information about which is primary, and which is backup.
 	// Use updateView() to update this view when doing get and put as needed.
-	view sysmonitor.View
-	id   string // should be generated to be a random string
+	view  sysmonitor.View
+	id    string // should be generated to be a random string
+	seqNo int
 }
 
 func MakeKVClient(monitorServer string) *KVClient {
@@ -37,6 +40,7 @@ func MakeKVClient(monitorServer string) *KVClient {
 	}
 
 	client.id = clientID.String()
+	client.seqNo = 0
 
 	return client
 }
@@ -100,21 +104,35 @@ func (client *KVClient) Get(key string) string {
 // must keep trying until it succeeds.
 // You can get the primary from the client's current view.
 func (client *KVClient) PutAux(key string, value string, dohash bool) string {
+	fmt.Printf("Sending Put with SeqNo = %v\n", client.seqNo)
 	args := &PutArgs{
-		Key:    key,
-		Value:  value,
-		DoHash: dohash,
+		Key:      key,
+		Value:    value,
+		DoHash:   dohash,
+		ClientID: client.id,
+		SeqNo:    client.seqNo,
 	}
+
 	var reply PutReply
 
-	var ok bool = false
+	timeout := time.After(5 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 
-	for !ok {
-		client.updateView()
-		ok = call(client.view.Primary, "KVServer.Put", args, &reply)
+	for {
+		select {
+		case <-timeout:
+			log.Println("PutAux timed out")
+			return ""
+		case <-ticker.C:
+			client.updateView()
+			ok := call(client.view.Primary, "KVServer.Put", args, &reply)
+			if ok {
+				client.seqNo++
+				return reply.PreviousValue
+			}
+		}
 	}
-
-	return reply.PreviousValue
 }
 
 // Both put and puthash rely on the auxiliary method PutAux. No modifications needed below.

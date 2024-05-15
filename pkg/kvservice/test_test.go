@@ -184,6 +184,7 @@ func TestAtMostOnce(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		v := strconv.Itoa(i)
 		pv := ck.PutHash(k, v)
+		fmt.Printf("Trying to send %v, pv=%v, should be val=%v\n", v, pv, val)
 		if pv != val {
 			t.Fatalf("ck.Puthash() returned %v but expected %v\n", pv, val)
 		}

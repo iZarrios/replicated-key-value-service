@@ -47,12 +47,35 @@ type KVServer struct {
 	mp           map[string]string // this hold the state
 	role         Role
 	backupExists bool
+	Reqs         map[string]int // Map of clientID to sequence number
 }
 
 func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
+
 	if server.role == BACKUP {
 		DPrintf("[BACKUP] Got Put request: %#v\n", args)
+	} else if server.role == PRIMARY {
+		DPrintf("[PRIMARY] Got Put request: %#v\n", args)
 	}
+
+	server.Reqs[args.ClientID]++
+
+	// check if the clientID is in the Reqs map and if the sequence number is greater than the one in the map
+	// if it is not, return an error
+	// if it is, update the sequence number in the map and proceed with the Put operation
+	// if the clientID is not in the map, add it to the map and proceed with the Put operation
+	// seqNo, ok := server.Reqs[args.ClientID]
+	// if !ok {
+	// 	// if not found, add it to the map
+	// 	server.Reqs[args.ClientID] = args.SeqNo
+	// } else if (seqNo + 1) != args.SeqNo {
+	// 	fmt.Printf("Expected sequence number %d, got %d\n", seqNo+1, args.SeqNo)
+	// 	fmt.Printf("Found clientID %s in the map\n", args.ClientID)
+	// 	reply.PreviousValue = server.mp[args.Key]
+	// 	return nil
+	// }
+
+	DPrintf("Got Put request: %#v\n", args)
 	val, ok := server.mp[args.Key]
 	if !ok {
 		val = ""
@@ -61,10 +84,10 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 	reply.PreviousValue = val
 
 	if args.DoHash {
-		key := hash(val + args.Value)
-		keyStr := strconv.Itoa(int(key))
+		h := hash(val + args.Value)
+		keyStr := strconv.Itoa(int(h))
 
-		server.mp[keyStr] = args.Value
+		server.mp[args.Key] = keyStr
 
 	} else {
 		// ordinary put
@@ -84,6 +107,8 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		ok := call(server.view.Backup, "KVServer.Put", args, &reply)
 		if !ok {
 			panic("Failed to forward key to backup")
+		} else {
+			DPrintf("[BACKUP] Forwarded key %s to backup\n", args.Key)
 		}
 	}
 
@@ -91,10 +116,6 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 }
 
 func (server *KVServer) Get(args *GetArgs, reply *GetReply) error {
-	// if server.view.Primary == server.id {
-	// 	server.role = PRIMARY
-	// }
-
 	if server.role == BACKUP {
 		server.printServerInfo()
 		fmt.Printf("server.view: %v\n", server.view)
@@ -154,9 +175,6 @@ func (server *KVServer) tick() {
 		}
 	default:
 		{
-			// fmt.Printf("server.id: %v\n", server.id)
-			// fmt.Printf("view: %v\n", view)
-			// panic("Unknown server role")
 		}
 	}
 
@@ -164,6 +182,10 @@ func (server *KVServer) tick() {
 	// and it does not already have a backup
 	// and the view shows that there is a backup avaialbe
 	// then we should synchornize with it
+
+	if view.Backup == "" {
+		server.backupExists = false
+	}
 
 	if server.role == PRIMARY && !server.backupExists && view.Backup != "" {
 
@@ -204,6 +226,7 @@ func StartKVServer(monitorServer string, id string) *KVServer {
 	server.backupExists = false
 
 	server.mp = make(map[string]string)
+	server.Reqs = make(map[string]int)
 
 	//====================================
 

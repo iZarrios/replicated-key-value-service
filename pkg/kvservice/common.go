@@ -20,6 +20,9 @@ type PutArgs struct {
 	DoHash bool // For PutHash
 	// You'll have to add definitions here.
 
+	ClientID string // the clientID of the client that sent the request
+	SeqNo    int    // the sequence number of the request associated with the clientID
+
 	// Field names should start with capital letters for RPC to work.
 }
 
@@ -40,6 +43,7 @@ type GetReply struct {
 
 // Add your RPC definitions here.
 //======================================
+// TODO: Add the RPC definitions here
 
 // ======================================
 
