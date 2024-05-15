@@ -44,11 +44,14 @@ type KVServer struct {
 	finish      chan interface{}
 
 	// Add your declarations here.
-	mp           map[string]string // this hold the state
+	// mp           map[string]string // this hold the state
+	mp           sync.Map
 	role         Role
 	backupExists bool
-	Reqs         map[string]int    // Map of clientID to sequence number
-	Prevs        map[string]string // Map of clientID to previous value
+	// Reqs         map[string]int    // Map of clientID to sequence number
+	Reqts sync.Map
+	// Prevs map[string]string // Map of clientID to previous value
+	Prevs sync.Map
 }
 
 func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
@@ -61,31 +64,51 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		}
 	}
 
-	if server.Reqs[args.ClientID] >= args.SeqNo && server.role == PRIMARY {
+	sqno, ok := server.Reqts.Load(args.ClientID)
+
+	SeqNo, _ := sqno.(int)
+
+	if ok && SeqNo >= args.SeqNo && server.role == PRIMARY {
 		DPrintf("[DUP] Put %#v\n", args)
+		ans, ok := server.mp.Load(args.Key)
+		if !ok {
+			reply.PreviousValue = ""
+		} else {
+			reply.PreviousValue = ans.(string)
+		}
 		// Duplicate request
-		reply.PreviousValue = server.Prevs[args.ClientID]
 		reply.Err = OK
 		return nil
 	}
 
-	server.Reqs[args.ClientID] = args.SeqNo
+	// server.Reqs[args.ClientID] = args.SeqNo
+	server.Reqts.Store(args.ClientID, args.SeqNo)
 
-	val, ok := server.mp[args.Key]
+	val := "" // default value
+
+	// val, ok := server.mp[args.Key]
+	valx, ok := server.mp.Load(args.Key)
 	if !ok {
 		val = ""
 	}
+
+	val, _ = valx.(string)
 
 	reply.PreviousValue = val
 
 	if args.DoHash {
 		h := hash(val + args.Value)
 		hStr := strconv.Itoa(int(h))
-		server.Prevs[args.ClientID] = val
-		server.mp[args.Key] = hStr
+		// server.Prevs[args.ClientID] = val
+		server.mp.Store(args.Key, hStr)
+		// server.mp[args.Key] = hStr
+		server.mp.Store(args.Key, hStr)
 	} else {
 		// ordinary put
-		server.mp[args.Key] = args.Value
+		// server.mp[args.Key] = args.Value
+		server.mp.Store(args.Key, args.Value)
+		// server.Prevs[args.ClientID] = val
+		server.mp.Store(args.Key, args.Value)
 	}
 
 	if server.role == PRIMARY && server.view.Backup != "" {
@@ -112,7 +135,17 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 }
 
 func (server *KVServer) Get(args *GetArgs, reply *GetReply) error {
-	reply.Value = server.mp[args.Key]
+	// reply.Value = server.mp[args.Key]
+	valx, _ := server.mp.Load(args.Key)
+
+	val, ok := valx.(string)
+	if !ok {
+		reply.Value = ""
+		reply.Err = ErrNoKey
+		return nil
+	}
+
+	reply.Value = val
 	reply.Err = OK
 	return nil
 }
@@ -128,10 +161,24 @@ func (server *KVServer) ForwardDataToBackup() {
 		return
 	}
 
-	for key, value := range server.mp {
+	// for key, value := range server.mp {
+	// 	args := &PutArgs{
+	// 		Key:    key,
+	// 		Value:  value,
+	// 		DoHash: false,
+	// 	}
+	// 	var reply PutReply
+	// 	ok := call(server.view.Backup, "KVServer.Put", args, &reply)
+	// 	if !ok || reply.Err != "" {
+	// 		DPrintf("Failed to forward key %s to backup: %v\n", key, reply.Err)
+	// 	} else {
+	// 		DPrintf("Forwarded key %s to backup\n", key)
+	// 	}
+	// }
+	server.mp.Range(func(key, value interface{}) bool {
 		args := &PutArgs{
-			Key:    key,
-			Value:  value,
+			Key:    key.(string),
+			Value:  value.(string),
 			DoHash: false,
 		}
 		var reply PutReply
@@ -141,7 +188,9 @@ func (server *KVServer) ForwardDataToBackup() {
 		} else {
 			DPrintf("Forwarded key %s to backup\n", key)
 		}
-	}
+
+		return true
+	})
 }
 
 // ping the viewserver periodically.
@@ -216,9 +265,9 @@ func StartKVServer(monitorServer string, id string) *KVServer {
 	server.role = UNKOWN
 	server.backupExists = false
 
-	server.mp = make(map[string]string)
-	server.Reqs = make(map[string]int)
-	server.Prevs = make(map[string]string)
+	// server.mp = make(map[string]string)
+	// server.Reqs = make(map[string]int)
+	// server.Prevs = make(map[string]string)
 
 	//====================================
 
