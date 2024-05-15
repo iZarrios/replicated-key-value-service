@@ -61,7 +61,7 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		}
 	}
 
-	if server.Reqs[args.ClientID] >= args.SeqNo {
+	if server.Reqs[args.ClientID] >= args.SeqNo && server.role == PRIMARY {
 		DPrintf("[DUP] Put %#v\n", args)
 		// Duplicate request
 		reply.PreviousValue = server.Prevs[args.ClientID]
@@ -90,17 +90,20 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 
 	if server.role == PRIMARY && server.view.Backup != "" {
 		args := &PutArgs{
-			Key:    args.Key,
-			Value:  args.Value,
-			DoHash: args.DoHash,
+			Key:      args.Key,
+			Value:    args.Value,
+			DoHash:   args.DoHash,
+			ClientID: args.ClientID,
+			SeqNo:    args.SeqNo,
 		}
+
 		var reply PutReply
 
 		DPrintf("Trying to send %#v to backup\n", args)
 
 		ok := call(server.view.Backup, "KVServer.Put", args, &reply)
 		if !ok {
-			panic("Failed to forward key to backup")
+			DPrintf("Failed to forward key to backup")
 		}
 	}
 
@@ -121,7 +124,7 @@ func (server *KVServer) ForwardDataToBackup() {
 
 	// Check if backup exists
 	if server.view.Backup == "" {
-		log.Println("No backup server to forward data to.")
+		log.Println("[This should not happen] No backup server to forward data to.")
 		return
 	}
 
@@ -178,12 +181,11 @@ func (server *KVServer) tick() {
 	if server.role == PRIMARY && !server.backupExists && view.Backup != "" {
 
 		server.backupExists = true
-		fmt.Println("Forwarding data to backup")
-		//TODO: uncomment
-		// server.ForwardDataToBackup()
+		DPrintf("Forwarding data to backup")
+		server.ForwardDataToBackup()
 	}
 
-	// server.printServerInfo()
+	server.printServerInfo()
 
 }
 
