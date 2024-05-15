@@ -24,7 +24,7 @@ const (
 )
 
 // Debugging
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -58,24 +58,16 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		DPrintf("[PRIMARY] Got Put request: %#v\n", args)
 	}
 
+	if server.Reqs[args.ClientID] >= args.SeqNo {
+		DPrintf("[DUP] Put %#v\n", args)
+		reply.PreviousValue = server.mp[args.Key]
+		return nil
+	} else {
+		DPrintf("[NEW] Put request: %#v\n", args)
+	}
+
 	server.Reqs[args.ClientID]++
 
-	// check if the clientID is in the Reqs map and if the sequence number is greater than the one in the map
-	// if it is not, return an error
-	// if it is, update the sequence number in the map and proceed with the Put operation
-	// if the clientID is not in the map, add it to the map and proceed with the Put operation
-	// seqNo, ok := server.Reqs[args.ClientID]
-	// if !ok {
-	// 	// if not found, add it to the map
-	// 	server.Reqs[args.ClientID] = args.SeqNo
-	// } else if (seqNo + 1) != args.SeqNo {
-	// 	fmt.Printf("Expected sequence number %d, got %d\n", seqNo+1, args.SeqNo)
-	// 	fmt.Printf("Found clientID %s in the map\n", args.ClientID)
-	// 	reply.PreviousValue = server.mp[args.Key]
-	// 	return nil
-	// }
-
-	DPrintf("Got Put request: %#v\n", args)
 	val, ok := server.mp[args.Key]
 	if !ok {
 		val = ""
@@ -116,14 +108,8 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 }
 
 func (server *KVServer) Get(args *GetArgs, reply *GetReply) error {
-	if server.role == BACKUP {
-		server.printServerInfo()
-		fmt.Printf("server.view: %v\n", server.view)
-		panic("Backup server should not receive Get requests")
-	}
-
 	reply.Value = server.mp[args.Key]
-	return fmt.Errorf(string(reply.Err))
+	return nil
 }
 
 // NOTE: This can be optimized by sending the entire map to the backup
@@ -191,10 +177,11 @@ func (server *KVServer) tick() {
 
 		server.backupExists = true
 		fmt.Println("Forwarding data to backup")
-		server.ForwardDataToBackup()
+		//TODO: uncomment
+		// server.ForwardDataToBackup()
 	}
 
-	server.printServerInfo()
+	// server.printServerInfo()
 
 }
 
