@@ -92,7 +92,7 @@ func (client *KVClient) Get(key string) string {
 
 	var ok bool = false
 
-	for !ok {
+	for !ok || reply.Err != OK {
 		client.updateView()
 		ok = call(client.view.Primary, "KVServer.Get", &args, &reply)
 	}

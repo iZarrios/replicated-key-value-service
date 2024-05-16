@@ -124,7 +124,7 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		DPrintf("Trying to send %#v to backup\n", args)
 
 		ok := call(server.view.Backup, "KVServer.Put", args, &reply)
-		if !ok {
+		if !ok || reply.Err != OK {
 			server.backupExists = false
 			DPrintf("Failed to forward key to backup")
 		}
@@ -135,6 +135,11 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 }
 
 func (server *KVServer) Get(args *GetArgs, reply *GetReply) error {
+	if server.role == BACKUP {
+		fmt.Printf("[BACKUP] Got Get request: %#v\n", args)
+		reply.Err = ErrWrongServer
+		return nil
+	}
 	// reply.Value = server.mp[args.Key]
 	valx, _ := server.mp.Load(args.Key)
 
