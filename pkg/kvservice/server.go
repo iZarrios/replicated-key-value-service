@@ -49,9 +49,9 @@ type KVServer struct {
 	role         Role
 	backupExists bool
 	// Reqs         map[string]int    // Map of clientID to sequence number
-	Reqts sync.Map
-	// Prevs map[string]string // Map of clientID to previous value
-	Prevs sync.Map
+	Reqts  sync.Map
+	lPrevs sync.Mutex
+	Prevs  map[string]string // Map of clientID to previous value
 }
 
 func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
@@ -70,13 +70,10 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 
 	if ok && SeqNo >= args.SeqNo && server.role == PRIMARY {
 		DPrintf("[DUP] Put %#v\n", args)
-		ans, ok := server.mp.Load(args.Key)
-		if !ok {
-			reply.PreviousValue = ""
-		} else {
-			reply.PreviousValue = ans.(string)
-		}
 		// Duplicate request
+		server.lPrevs.Lock()
+		reply.PreviousValue = server.Prevs[args.ClientID]
+		server.lPrevs.Unlock()
 		reply.Err = OK
 		return nil
 	}
@@ -99,16 +96,18 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 	if args.DoHash {
 		h := hash(val + args.Value)
 		hStr := strconv.Itoa(int(h))
-		// server.Prevs[args.ClientID] = val
-		server.mp.Store(args.Key, hStr)
+		server.lPrevs.Lock()
+		server.Prevs[args.ClientID] = val
+		server.lPrevs.Unlock()
 		// server.mp[args.Key] = hStr
 		server.mp.Store(args.Key, hStr)
 	} else {
 		// ordinary put
 		// server.mp[args.Key] = args.Value
 		server.mp.Store(args.Key, args.Value)
-		// server.Prevs[args.ClientID] = val
-		server.mp.Store(args.Key, args.Value)
+		server.lPrevs.Lock()
+		server.Prevs[args.ClientID] = val
+		server.lPrevs.Unlock()
 	}
 
 	if server.role == PRIMARY && server.view.Backup != "" {
@@ -183,12 +182,11 @@ func (server *KVServer) ForwardDataToBackup() {
 		}
 		var reply PutReply
 		ok := call(server.view.Backup, "KVServer.Put", args, &reply)
-		if !ok || reply.Err != "" {
+		if !ok || reply.Err != OK {
 			DPrintf("Failed to forward key %s to backup: %v\n", key, reply.Err)
 		} else {
 			DPrintf("Forwarded key %s to backup\n", key)
 		}
-
 		return true
 	})
 }
@@ -267,7 +265,7 @@ func StartKVServer(monitorServer string, id string) *KVServer {
 
 	// server.mp = make(map[string]string)
 	// server.Reqs = make(map[string]int)
-	// server.Prevs = make(map[string]string)
+	server.Prevs = make(map[string]string)
 
 	//====================================
 
