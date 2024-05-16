@@ -125,6 +125,7 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 
 		ok := call(server.view.Backup, "KVServer.Put", args, &reply)
 		if !ok {
+			server.backupExists = false
 			DPrintf("Failed to forward key to backup")
 		}
 	}
@@ -160,20 +161,6 @@ func (server *KVServer) ForwardDataToBackup() {
 		return
 	}
 
-	// for key, value := range server.mp {
-	// 	args := &PutArgs{
-	// 		Key:    key,
-	// 		Value:  value,
-	// 		DoHash: false,
-	// 	}
-	// 	var reply PutReply
-	// 	ok := call(server.view.Backup, "KVServer.Put", args, &reply)
-	// 	if !ok || reply.Err != "" {
-	// 		DPrintf("Failed to forward key %s to backup: %v\n", key, reply.Err)
-	// 	} else {
-	// 		DPrintf("Forwarded key %s to backup\n", key)
-	// 	}
-	// }
 	server.mp.Range(func(key, value interface{}) bool {
 		args := &PutArgs{
 			Key:    key.(string),
