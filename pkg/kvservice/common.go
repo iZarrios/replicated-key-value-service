@@ -42,8 +42,15 @@ type GetReply struct {
 }
 
 // Add your RPC definitions here.
-//======================================
-// TODO: Add the RPC definitions here
+// ======================================
+type SyncBackupArgs struct {
+	Data  map[string]string
+	Prevs map[string]map[int]string
+	Reqs  map[string]int
+}
+type SyncBackupReply struct {
+	Err Err
+}
 
 // ======================================
 
