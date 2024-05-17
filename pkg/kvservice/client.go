@@ -115,11 +115,11 @@ func (client *KVClient) PutAux(key string, value string, dohash bool) string {
 
 	var reply PutReply
 
-	timeout := time.After(5 * time.Second)
+	timeout := time.After(60 * time.Second)
 	// ticker is used to periodically update the view.
 	// This is useful when the primary has failed and the view has been updated.
 	// This way, the client can keep trying to send the Put request to the new primary.
-	ticker := time.NewTicker(10 * time.Microsecond) // FIXME: this should be a lot longer in practice.
+	ticker := time.NewTicker(1 * time.Microsecond) // FIXME: this should be a lot longer in practice.
 	defer ticker.Stop()
 
 	for {
@@ -130,7 +130,7 @@ func (client *KVClient) PutAux(key string, value string, dohash bool) string {
 		case <-ticker.C:
 			client.updateView()
 			ok := call(client.view.Primary, "KVServer.Put", args, &reply)
-			if ok {
+			if ok && reply.Err == OK {
 				client.seqNo++
 				return reply.PreviousValue
 			}
