@@ -51,7 +51,8 @@ type KVServer struct {
 	// Reqs         map[string]int    // Map of clientID to sequence number
 	Reqts  sync.Map
 	lPrevs sync.Mutex
-	Prevs  map[string]string // Map of clientID to previous value
+	// Prevs  map[string]string // Map of clientID to previous value
+	Prevs map[string]map[int]string
 }
 
 func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
@@ -72,7 +73,7 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		DPrintf("[DUP] Put %#v\n", args)
 		// Duplicate request
 		server.lPrevs.Lock()
-		reply.PreviousValue = server.Prevs[args.ClientID]
+		reply.PreviousValue = server.Prevs[args.ClientID][args.SeqNo]
 		server.lPrevs.Unlock()
 		reply.Err = OK
 		return nil
@@ -97,7 +98,10 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		h := hash(val + args.Value)
 		hStr := strconv.Itoa(int(h))
 		server.lPrevs.Lock()
-		server.Prevs[args.ClientID] = val
+		if server.Prevs[args.ClientID] == nil {
+			server.Prevs[args.ClientID] = make(map[int]string)
+		}
+		server.Prevs[args.ClientID][args.SeqNo] = val
 		server.lPrevs.Unlock()
 		// server.mp[args.Key] = hStr
 		server.mp.Store(args.Key, hStr)
@@ -106,7 +110,10 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		// server.mp[args.Key] = args.Value
 		server.mp.Store(args.Key, args.Value)
 		server.lPrevs.Lock()
-		server.Prevs[args.ClientID] = val
+		if server.Prevs[args.ClientID] == nil {
+			server.Prevs[args.ClientID] = make(map[int]string)
+		}
+		server.Prevs[args.ClientID][args.SeqNo] = val
 		server.lPrevs.Unlock()
 	}
 
@@ -257,7 +264,7 @@ func StartKVServer(monitorServer string, id string) *KVServer {
 
 	// server.mp = make(map[string]string)
 	// server.Reqs = make(map[string]int)
-	server.Prevs = make(map[string]string)
+	server.Prevs = make(map[string]map[int]string)
 
 	//====================================
 
