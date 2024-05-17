@@ -2,6 +2,7 @@ package kvservice
 
 import (
 	"crypto/rand"
+
 	"fmt"
 	"log"
 	"math/big"
@@ -78,7 +79,13 @@ func call(srv string, rpcname string,
 
 // You can use this method to update the client's view when needed during get and put operations.
 func (client *KVClient) updateView() {
-	view, _ := client.monitorClnt.Get()
+	var view sysmonitor.View
+	ok := false
+
+	for !ok {
+		view, ok = client.monitorClnt.Get()
+	}
+
 	client.view = view
 }
 

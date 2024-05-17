@@ -44,18 +44,17 @@ type KVServer struct {
 	finish      chan interface{}
 
 	// Add your declarations here.
-	// mp           map[string]string // this hold the state
 	mp           sync.Map
 	role         Role
 	backupExists bool
-	// Reqs         map[string]int    // Map of clientID to sequence number
-	Reqts  sync.Map
-	lPrevs sync.Mutex
-	Prevs  map[string]string // Map of clientID to previous value
+	Reqts        sync.Map // clientID to sequence number
+	lPrevs       sync.Mutex
+	Prevs        map[string]string // Map of clientID to previous value
 }
 
 func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 
+	//TODO: REMOVE
 	{ // Debug
 		if server.role == BACKUP {
 			DPrintf("[BACKUP] Got Put request: %#v\n", args)
@@ -123,8 +122,14 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 
 		DPrintf("Trying to send %#v to backup\n", args)
 
-		ok := call(server.view.Backup, "KVServer.Put", args, &reply)
-		if !ok || reply.Err != OK {
+		ok := false
+		for !ok || reply.Err != OK {
+			if server.view.Backup == "" {
+				// reply.Err = ErrWrongServer
+				break
+			}
+
+			ok = call(server.view.Backup, "KVServer.Put", args, &reply)
 			server.backupExists = false
 			DPrintf("Failed to forward key to backup")
 		}
@@ -135,6 +140,13 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 }
 
 func (server *KVServer) Get(args *GetArgs, reply *GetReply) error {
+	ok := false
+	var view sysmonitor.View
+	for !ok {
+		view, ok = server.monitorClnt.Get()
+
+	}
+	server.view = view
 	if server.role == BACKUP {
 		DPrintf("[BACKUP] Got Get request: %#v\n", args)
 		reply.Err = ErrWrongServer
@@ -173,12 +185,12 @@ func (server *KVServer) ForwardDataToBackup() {
 			DoHash: false,
 		}
 		var reply PutReply
-		ok := call(server.view.Backup, "KVServer.Put", args, &reply)
-		if !ok || reply.Err != OK {
-			DPrintf("Failed to forward key %s to backup: %v\n", key, reply.Err)
-		} else {
-			DPrintf("Forwarded key %s to backup\n", key)
+		ok := false
+
+		for !ok || reply.Err != OK {
+			ok = call(server.view.Backup, "KVServer.Put", args, &reply)
 		}
+
 		return true
 	})
 }
@@ -187,11 +199,16 @@ func (server *KVServer) ForwardDataToBackup() {
 func (server *KVServer) tick() {
 
 	// This line will give an error initially as view and err are not used.
-	view, err := server.monitorClnt.Ping(server.view.Viewnum)
+	view, _ := server.monitorClnt.Ping(server.view.Viewnum)
 
-	if err != nil {
-		panic("The Sysmonitor is dead")
-	}
+	//TODO: REMOVE
+	// var view sysmonitor.View
+	// var err error = fmt.Errorf("dummy error") // to make it like do while
+
+	// for err != nil {
+	// 	view, err = server.monitorClnt.Ping(server.view.Viewnum)
+	// }
+
 	server.view = view
 
 	switch server.id {
@@ -212,7 +229,6 @@ func (server *KVServer) tick() {
 	// and it does not already have a backup
 	// and the view shows that there is a backup avaialbe
 	// then we should synchornize with it
-
 	if view.Backup == "" {
 		server.backupExists = false
 	}
@@ -239,6 +255,7 @@ func (server *KVServer) printServerInfo() {
 // tell the server to shut itself down.
 // please do not change this function.
 func (server *KVServer) Kill() {
+	server.view = sysmonitor.View{Primary: "", Backup: "", Viewnum: 0}
 	server.dead = true
 	server.l.Close()
 }
