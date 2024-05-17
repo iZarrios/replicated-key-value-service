@@ -160,6 +160,26 @@ func (server *KVServer) Get(args *GetArgs, reply *GetReply) error {
 	return nil
 }
 
+func (server *KVServer) SyncBackup(args *SyncBackupArgs, reply *PutReply) error {
+	server.mp = sync.Map{}
+	server.Prevs = make(map[string]map[int]string)
+	server.Reqs = sync.Map{}
+
+	for key, value := range args.Data {
+		server.mp.Store(key, value)
+	}
+
+	for key, value := range args.Prevs {
+		server.Prevs[key] = value
+	}
+
+	for key, value := range args.Reqs {
+		server.Reqs.Store(key, value)
+	}
+	reply.Err = OK
+	return nil
+}
+
 // NOTE: This can be optimized by sending the entire map to the backup
 func (server *KVServer) ForwardDataToBackup() {
 	// This function is called when the primary server detects a new backup
@@ -171,21 +191,35 @@ func (server *KVServer) ForwardDataToBackup() {
 		return
 	}
 
+	args := &SyncBackupArgs{
+		Data:  make(map[string]string),
+		Prevs: make(map[string]map[int]string),
+		Reqs:  make(map[string]int),
+	}
+
 	server.mp.Range(func(key, value interface{}) bool {
-		args := &PutArgs{
-			Key:    key.(string),
-			Value:  value.(string),
-			DoHash: false,
-		}
-		var reply PutReply
-		ok := call(server.view.Backup, "KVServer.Put", args, &reply)
-		if !ok || reply.Err != OK {
-			DPrintf("Failed to forward key %s to backup: %v\n", key, reply.Err)
-		} else {
-			DPrintf("Forwarded key %s to backup\n", key)
-		}
+		args.Data[key.(string)] = value.(string)
 		return true
 	})
+
+	server.lPrevs.Lock()
+	for key, value := range server.Prevs {
+		args.Prevs[key] = value
+	}
+	server.lPrevs.Unlock()
+
+	server.Reqs.Range(func(key, value interface{}) bool {
+		args.Reqs[key.(string)] = value.(int)
+		return true
+	})
+
+	var reply PutReply
+	ok := call(server.view.Backup, "KVServer.SyncBackup", args, &reply)
+	if !ok || reply.Err != OK {
+		DPrintf("Failed to forward data to backup: %v\n", reply.Err)
+	} else {
+		DPrintf("Forwarded data to backup\n")
+	}
 }
 
 // ping the viewserver periodically.
