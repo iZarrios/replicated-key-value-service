@@ -136,7 +136,7 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 
 func (server *KVServer) Get(args *GetArgs, reply *GetReply) error {
 	if server.role == BACKUP {
-		fmt.Printf("[BACKUP] Got Get request: %#v\n", args)
+		DPrintf("[BACKUP] Got Get request: %#v\n", args)
 		reply.Err = ErrWrongServer
 		return nil
 	}
