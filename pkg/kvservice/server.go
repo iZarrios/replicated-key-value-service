@@ -44,15 +44,13 @@ type KVServer struct {
 	finish      chan interface{}
 
 	// Add your declarations here.
-	// mp           map[string]string // this hold the state
 	mp           sync.Map
 	role         Role
 	backupExists bool
-	// Reqs         map[string]int    // Map of clientID to sequence number
-	Reqts  sync.Map
+	Reqs         sync.Map // Map of clientID to sequence number
+
 	lPrevs sync.Mutex
-	// Prevs  map[string]string // Map of clientID to previous value
-	Prevs map[string]map[int]string
+	Prevs  map[string]map[int]string
 }
 
 func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
@@ -65,7 +63,7 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		}
 	}
 
-	sqno, ok := server.Reqts.Load(args.ClientID)
+	sqno, ok := server.Reqs.Load(args.ClientID)
 
 	SeqNo, _ := sqno.(int)
 
@@ -80,7 +78,7 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 	}
 
 	// server.Reqs[args.ClientID] = args.SeqNo
-	server.Reqts.Store(args.ClientID, args.SeqNo)
+	server.Reqs.Store(args.ClientID, args.SeqNo)
 
 	val := "" // default value
 
