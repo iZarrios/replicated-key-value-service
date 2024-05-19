@@ -47,9 +47,10 @@ type KVServer struct {
 	mp           sync.Map
 	role         Role
 	backupExists bool
-	Reqts        sync.Map // clientID to sequence number
-	lPrevs       sync.Mutex
-	Prevs        map[string]string // Map of clientID to previous value
+	Reqs         sync.Map // clientID to sequence number
+
+	lPrevs sync.Mutex
+	Prevs  map[string]string // Map of clientID to previous value
 }
 
 func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
@@ -63,7 +64,7 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		}
 	}
 
-	sqno, ok := server.Reqts.Load(args.ClientID)
+	sqno, ok := server.Reqs.Load(args.ClientID)
 
 	SeqNo, _ := sqno.(int)
 
@@ -78,7 +79,7 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 	}
 
 	// server.Reqs[args.ClientID] = args.SeqNo
-	server.Reqts.Store(args.ClientID, args.SeqNo)
+	server.Reqs.Store(args.ClientID, args.SeqNo)
 
 	val := "" // default value
 
@@ -169,6 +170,7 @@ func (server *KVServer) Get(args *GetArgs, reply *GetReply) error {
 
 // NOTE: This can be optimized by sending the entire map to the backup
 func (server *KVServer) ForwardDataToBackup() {
+
 	// This function is called when the primary server detects a new backup
 	// and it should forward its data to the new backup.
 
@@ -179,6 +181,12 @@ func (server *KVServer) ForwardDataToBackup() {
 	}
 
 	server.mp.Range(func(key, value interface{}) bool {
+		view, _ := server.monitorClnt.Ping(server.view.Viewnum)
+		server.view = view
+		if server.view.Primary != server.id || server.view.Backup == "" {
+			return false
+		}
+
 		args := &PutArgs{
 			Key:    key.(string),
 			Value:  value.(string),
