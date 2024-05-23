@@ -286,7 +286,6 @@ func (server *KVServer) printServerInfo() {
 // tell the server to shut itself down.
 // please do not change this function.
 func (server *KVServer) Kill() {
-	server.view = sysmonitor.View{Primary: "", Backup: "", Viewnum: 0}
 	server.dead = true
 	server.l.Close()
 }
