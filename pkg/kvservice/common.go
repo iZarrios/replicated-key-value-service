@@ -43,7 +43,6 @@ type GetReply struct {
 
 // Add your RPC definitions here.
 // ======================================
-// TODO: Add the RPC definitions here
 type SendPrevArgs struct {
 	Prevs map[string]string
 }

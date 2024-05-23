@@ -137,6 +137,9 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 			server.view = view
 
 			ok = call(server.view.Backup, "KVServer.Put", args, &reply)
+			if !ok {
+				reply.Err = ErrWrongServer
+			}
 			server.backupExists = false
 			DPrintf("Failed to forward key to backup\n")
 		}
@@ -186,8 +189,8 @@ func (server *KVServer) ForwardDataToBackup() {
 	}
 
 	server.mp.Range(func(key, value interface{}) bool {
-		view, _ := server.monitorClnt.Ping(server.view.Viewnum)
-		server.view = view
+		// view, _ := server.monitorClnt.Ping(server.view.Viewnum)
+		// server.view = view
 		if server.view.Primary != server.id || server.view.Backup == "" {
 			return false
 		}
@@ -208,19 +211,18 @@ func (server *KVServer) ForwardDataToBackup() {
 	})
 
 	//TODO: Sending Prev to backup
-	// server.lPrevs.Lock()
-	// args := &SendPrevArgs{
-	// 	Prevs: server.Prevs,
-	// }
-	// server.lPrevs.Unlock()
+	server.lPrevs.Lock()
+	args := &SendPrevArgs{
+		Prevs: server.Prevs,
+	}
+	server.lPrevs.Unlock()
 
-	// var reply SendPrevReply
+	var reply SendPrevReply
+	ok := false
 
-	// ok := false
-
-	// for !ok || reply.Err != OK {
-	// 	ok = call(server.view.Backup, "KVServer.SendPrev", args, &reply)
-	// }
+	for !ok || reply.Err != OK {
+		ok = call(server.view.Backup, "KVServer.SendPrev", args, &reply)
+	}
 
 }
 
@@ -228,15 +230,15 @@ func (server *KVServer) ForwardDataToBackup() {
 func (server *KVServer) tick() {
 
 	// This line will give an error initially as view and err are not used.
-	view, _ := server.monitorClnt.Ping(server.view.Viewnum)
+	// view, _ := server.monitorClnt.Ping(server.view.Viewnum)
 
 	//TODO: REMOVE
-	// var view sysmonitor.View
-	// var err error = fmt.Errorf("dummy error") // to make it like do while
+	var view sysmonitor.View
+	var err error = fmt.Errorf("dummy error") // to make it like do while
 
-	// for err != nil {
-	// 	view, err = server.monitorClnt.Ping(server.view.Viewnum)
-	// }
+	for err != nil {
+		view, err = server.monitorClnt.Ping(server.view.Viewnum)
+	}
 
 	server.view = view
 
