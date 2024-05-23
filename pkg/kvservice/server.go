@@ -24,7 +24,7 @@ const (
 )
 
 // Debugging
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -47,10 +47,19 @@ type KVServer struct {
 	mp           sync.Map
 	role         Role
 	backupExists bool
-	Reqs         sync.Map // clientID to sequence number
+
+	Reqs sync.Map // clientID to sequence number
 
 	lPrevs sync.Mutex
 	Prevs  map[string]string // Map of clientID to previous value
+}
+
+func (server *KVServer) SendPrev(args *SendPrevArgs, reply *SendPrevReply) error {
+	server.lPrevs.Lock()
+	defer server.lPrevs.Unlock()
+	server.Prevs = args.Prevs
+	reply.Err = OK
+	return nil
 }
 
 func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
@@ -78,12 +87,10 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		return nil
 	}
 
-	// server.Reqs[args.ClientID] = args.SeqNo
 	server.Reqs.Store(args.ClientID, args.SeqNo)
 
 	val := "" // default value
 
-	// val, ok := server.mp[args.Key]
 	valx, ok := server.mp.Load(args.Key)
 	if !ok {
 		val = ""
@@ -125,14 +132,11 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 
 		ok := false
 		for !ok || reply.Err != OK {
-			if server.view.Backup == "" {
-				// reply.Err = ErrWrongServer
-				break
-			}
+			// update view
 
 			ok = call(server.view.Backup, "KVServer.Put", args, &reply)
 			server.backupExists = false
-			DPrintf("Failed to forward key to backup")
+			DPrintf("Failed to forward key to backup\n")
 		}
 	}
 
@@ -176,8 +180,7 @@ func (server *KVServer) ForwardDataToBackup() {
 
 	// Check if backup exists
 	if server.view.Backup == "" {
-		log.Println("[This should not happen] No backup server to forward data to.")
-		return
+		panic("[This should not happen] No backup server to forward data to.")
 	}
 
 	server.mp.Range(func(key, value interface{}) bool {
@@ -201,6 +204,22 @@ func (server *KVServer) ForwardDataToBackup() {
 
 		return true
 	})
+
+	//TODO: Sending Prev to backup
+	// server.lPrevs.Lock()
+	// args := &SendPrevArgs{
+	// 	Prevs: server.Prevs,
+	// }
+	// server.lPrevs.Unlock()
+
+	// var reply SendPrevReply
+
+	// ok := false
+
+	// for !ok || reply.Err != OK {
+	// 	ok = call(server.view.Backup, "KVServer.SendPrev", args, &reply)
+	// }
+
 }
 
 // ping the viewserver periodically.

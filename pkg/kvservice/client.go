@@ -3,7 +3,7 @@ package kvservice
 import (
 	"crypto/rand"
 
-	"fmt"
+	// "fmt"
 	"log"
 	"math/big"
 	"net/rpc"
@@ -73,7 +73,7 @@ func call(srv string, rpcname string,
 		return true
 	}
 
-	fmt.Println(err)
+	// fmt.Println(err)
 	return false
 }
 
