@@ -24,7 +24,7 @@ const (
 )
 
 // Debugging
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -133,6 +133,8 @@ func (server *KVServer) Put(args *PutArgs, reply *PutReply) error {
 		ok := false
 		for !ok || reply.Err != OK {
 			// update view
+			view, _ := server.monitorClnt.Ping(server.view.Viewnum)
+			server.view = view
 
 			ok = call(server.view.Backup, "KVServer.Put", args, &reply)
 			server.backupExists = false
